@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "rust_huffman_coding"
+name = "huffc"
 version = "0.1.0"
