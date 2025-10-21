@@ -4,9 +4,6 @@ This is the main documentation page for the project.
 
 # Pages
 
-* [Encoding](./encoding.md)
-* [Class Hierarchy](./class_hierarchy.md)
-
 ## Application Interface
 
 The way that users will interface with the application is by invoking a command
