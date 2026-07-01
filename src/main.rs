@@ -1,68 +1,27 @@
 use std::env;
-use std::fs;
-use std::process;
+use std::io::{self, IsTerminal};
 
 mod huffman;
 
-pub struct App;
-
-impl App {
-  pub fn invoke(args: Vec<String>) {
-    match Self::validate_args(&args) {
-      Err(message) => {
-        println!("{}", message);
-        process::exit(1);
-      },
-      Ok(_) => ()
-    }
-
-    let mode_flag = &args[1];
-    let file_path = &args[2];
-
-    if mode_flag == "-e" {
-      let mut encoder = huffman::Encoder::new(file_path);
-      let _binary_output = encoder.encode();
-    }
-
-    if mode_flag == "-d" {
-    }
-  }
-
-  fn validate_args(args: &Vec<String>) -> Result<bool, &str> {
-    let usage = "Usage: huffc [ -d | -e ] <file>";
-
-    if args.len() > 3 {
-      return Err("Too many arguments given.");
-    }
-
-    if args.len() <= 1 {
-      return Err(usage);
-    }
-
-    if args[1] == "-h" {
-      return Err(usage);
-    }
-
-    if args[1] == "-d" || args[1] == "-e" {
-      if args.len() == 2 {
-        return Err("Must specify a file path with -e or -d option.");
-      }
-
-      let file_exists = fs::exists(&args[2])
-        .expect("Error occurred while checking if file exists");
-
-      if !file_exists {
-        return Err("File does not exist.");
-      }
-    } else {
-      return Err("Non-existent program argument given.");
-    }
-
-    return Ok(true);
-  }
-}
-
 fn main() {
-  let args = env::args().collect();
-  App::invoke(args);
+    let args: Vec<String> = env::args().collect();
+
+    let encode_selected = args.iter().any(|a| a == "--encode");
+    let decode_selected = args.iter().any(|a| a == "--decode");
+
+    if !encode_selected && !decode_selected {
+        println!("Must specify either --encode or --decode");
+        std::process::exit(1);
+    }
+
+    if io::stdin().is_terminal() {
+        println!("Error: No piped input. You must provide some input via standard input.");
+        std::process::exit(1);
+    }
+
+    if encode_selected {
+        huffman::File::encode(io::stdin(), io::stdout());
+    } else {
+        huffman::File::decode(io::stdin(), io::stdout());
+    }
 }
