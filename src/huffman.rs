@@ -48,13 +48,25 @@ impl File {
 }
 
 impl Key {
-    pub fn from_stream(in_stream: &mut impl std::io::Read) -> Key {
-        let mut buf = [0u8; 1024];
-        let mut bytes_read;
-
+    /// Builds an instance of a Key from raw input.
+    pub fn create(in_stream: &mut impl std::io::Read) -> Key {
         let mut key = Key {
             counts: HashMap::new()
         };
+
+        key.generate_counts(in_stream);
+
+        return key;
+    }
+
+    /// Load a previously persisted Key from bytes.
+    pub fn load(in_stream: &mut impl std::io::Read) -> Key {
+
+    }
+
+    fn generate_counts(&mut self, in_stream: &mut impl std::io::Read) {
+        let mut buf = [0u8; 1024];
+        let mut bytes_read;
 
         bytes_read = in_stream.read(&mut buf).unwrap();
 
@@ -63,7 +75,7 @@ impl Key {
 
         while bytes_read > 0 {
             for chr in buf {
-                key.counts.entry(chr)
+                self.counts.entry(chr)
                     .and_modify(|count| *count += 1)
                     .or_insert(1);
             }
@@ -75,14 +87,7 @@ impl Key {
         }
 
         #[cfg(debug_assertions)]
-        dbg!(&key.counts);
+        dbg!(&self.counts);
 
-        return key;
-    }
-
-    pub fn print_counts(&self) {
-        for entry in self.counts {
-            println!("{}: {}");
-        }
     }
 }
