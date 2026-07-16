@@ -21,9 +21,10 @@ struct Key {
 struct Node {
     weight: u32,
     value: Option<u8>,
-    parent: Option<usize>,
-    left: Option<usize>,
-    right: Option<usize>
+    index: usize,
+    parent_idx: Option<usize>,
+    left_idx: Option<usize>,
+    right_idx: Option<usize>
 }
 
 impl App {
@@ -62,13 +63,14 @@ impl App {
 }
 
 impl Node {
-    pub fn new(weight: u32, value: Option<u8>) -> Node {
+    pub fn new(weight: u32, value: Option<u8>, index: usize) -> Node {
         Node {
             weight: weight,
             value: value,
-            parent: None,
-            left: None,
-            right: None,
+            index: index,
+            parent_idx: None,
+            left_idx: None,
+            right_idx: None,
         }
     }
 }
@@ -93,17 +95,30 @@ impl Key {
 
     pub fn build_from_stream(in_stream: impl std::io::Read) {
         let mut key = Key::new();
-
         let counts = Key::count_frequencies(in_stream);
-
         key.nodes = Key::create_leaf_nodes(counts);
+        
+        let next_index = key.nodes.len();
+
+        // This step creates references to each Node.
+        let queue = Key::queue_nodes(&mut key.nodes);
+
+        // This step consumes the Node references... so this step must finish so that the borrows
+        // can "be finished"
+        let new_nodes = Key::assemble_tree(queue, next_index);
+
+        // Now we can mutate &self... since all of the references to the &Node objects have been
+        // used, and borrows are given back.
+        for node in new_nodes {
+            key.nodes.push(node);
+        }
     }
 
     fn create_leaf_nodes(counts: HashMap<u8, u32>) -> Vec<Node> {
         let mut nodes = Vec::new();
 
-        for (byte, freq) in counts {
-            let node = Node::new(freq, Some(byte));
+        for (i, (byte, freq)) in counts.into_iter().enumerate() {
+            let node = Node::new(freq, Some(byte), i);
             nodes.push(node);
         }
 
@@ -129,6 +144,44 @@ impl Key {
         }
 
         return counts;
+    }
+
+    fn queue_nodes(nodes: &mut Vec<Node>) -> BinaryHeap<Reverse<&mut Node>> {
+        let mut queue: BinaryHeap<Reverse<&mut Node>> = BinaryHeap::new();
+
+        for node in nodes {
+            queue.push(Reverse(node));
+        }
+
+        return queue;
+    }
+
+    fn assemble_tree(mut queue: BinaryHeap<Reverse<&mut Node>>, mut next_index: usize) -> Vec<Node> {
+        // The thinking here is to have a place to put the new nodes to live.
+        let mut new_nodes = Vec::new();
+
+        let first_parent = next_index;
+
+        // This loop will take the two next nodes, and create a new parent for these two nodes, and
+        // link them by index.
+        while queue.len() > 1 {
+            let left: &mut Node = queue.pop().unwrap().0;
+            let right = queue.pop().unwrap().0;
+            let weight = left.weight + right.weight;
+
+            let mut parent = Node::new(weight, None, next_index);
+            parent.left_idx = Some(left.index);
+            parent.right_idx = Some(right.index);
+
+            left.parent_idx = Some(parent.index);
+            right.parent_idx = Some(parent.index);
+
+            new_nodes.push(parent);
+
+            next_index += 1;
+        }
+
+        return new_nodes;
     }
 }
 
@@ -160,18 +213,40 @@ mod tests { use super::*;
             fn test_returns_expected_output() {
                 let input = HashMap::from([
                     (b'a', 5),
-                    (b'b', 10)
+                    (b'b', 10),
+                    (b'c', 20)
                 ]);
 
-                let mut nodes = Key::create_leaf_nodes(input);
+                let output_nodes = Key::create_leaf_nodes(input);
 
-                let node = nodes.pop().unwrap();
-                assert_eq!(node.value, Some(b'a'));
-                assert_eq!(node.weight, 5);
+                let n1 = output_nodes.iter().find(|node| node.value == Some(b'a')).unwrap();
+                assert_eq!(n1.weight, 5);
 
-                let node = nodes.pop().unwrap();
-                assert_eq!(node.value, Some(b'b'));
-                assert_eq!(node.weight, 10);
+                let n2 = output_nodes.iter().find(|node| node.value == Some(b'b')).unwrap();
+                assert_eq!(n2.weight, 10);
+
+                let n3 = output_nodes.iter().find(|node| node.value == Some(b'c')).unwrap();
+                assert_eq!(n3.weight, 20);
+            }
+        }
+
+        mod queue_nodes { use super::*;
+            #[test]
+            fn test_returns_expected_output() {
+                let mut nodes = Vec::from([
+                    Node::new(5, Some(b'a'), 0),
+                    Node::new(10, Some(b'b'), 1)
+                ]);
+
+                let mut queue = Key::queue_nodes(&mut nodes);
+
+                let n1 = queue.pop().unwrap().0;
+                assert_eq!(n1.weight, 5);
+                assert_eq!(n1.value, Some(b'a'));
+
+                let n1 = queue.pop().unwrap().0;
+                assert_eq!(n1.weight, 10);
+                assert_eq!(n1.value, Some(b'b'));
             }
         }
     }
