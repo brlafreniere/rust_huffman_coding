@@ -4,7 +4,7 @@ use std::collections::{HashMap, BinaryHeap};
 use std::cmp::Reverse;
 
 use std::env;
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, copy, Read, Write};
 
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ struct File;
 
 struct Key {
     nodes: Vec<Node>,
-    root: Option<usize>
+    root_idx: Option<usize>
 }
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug)]
@@ -44,21 +44,11 @@ impl App {
             std::process::exit(1);
         }
 
-        let file = Self::read_input_to_file(&mut io::stdin());
-
         if encode_selected {
             File::encode(&mut io::stdin(), &mut io::stdout());
         } else {
             File::decode(io::stdin(), io::stdout());
         }
-    }
-
-    fn read_input_to_file(in_stream: &mut impl std::io::Read) -> std::fs::File {
-        let id = Uuid::new_v4();
-        let file = std::fs::File::create(format!("/tmp/{id}"))
-            .expect("Failed to save input to temporary file.");
-
-        return file;
     }
 }
 
@@ -76,8 +66,16 @@ impl Node {
 }
 
 impl File {
-    pub fn encode(in_stream: &mut impl std::io::Read, out_stream: &mut impl std::io::Write) {
-        let key = Key::build_from_stream(in_stream);
+    pub fn encode<R: Read, W: Write>(input: &mut R, output: &mut W) {
+        let id = Uuid::new_v4();
+
+        let mut temp_file = std::fs::File::create(format!("/tmp/{id}"))
+            .expect("Failed to create temporary file.");
+
+        copy(input, &mut temp_file)
+            .expect("Failed to save input to temporary file.");
+
+        let key = Key::build_from_stream(temp_file);
     }
 
     pub fn decode(in_stream: impl std::io::Read, out_stream: impl std::io::Write) {
@@ -89,29 +87,23 @@ impl Key {
     fn new() -> Key {
         Key {
             nodes: Vec::new(),
-            root: None
+            root_idx: None
         }
     }
 
-    pub fn build_from_stream(in_stream: impl std::io::Read) {
+    pub fn build_from_stream(in_stream: impl std::io::Read) -> Key {
         let mut key = Key::new();
+
         let counts = Key::count_frequencies(in_stream);
-        key.nodes = Key::create_leaf_nodes(counts);
-        
-        let next_index = key.nodes.len();
+        let leaf_nodes = Key::create_leaf_nodes(counts);
+        let next_index = leaf_nodes.len();
+        let queue = Key::queue_nodes(leaf_nodes);
+        let (root_idx, nodes) = Key::assemble_tree(queue, next_index);
 
-        // This step creates references to each Node.
-        let queue = Key::queue_nodes(&mut key.nodes);
+        key.root_idx = Some(root_idx);
+        key.nodes = nodes;
 
-        // This step consumes the Node references... so this step must finish so that the borrows
-        // can "be finished"
-        let new_nodes = Key::assemble_tree(queue, next_index);
-
-        // Now we can mutate &self... since all of the references to the &Node objects have been
-        // used, and borrows are given back.
-        for node in new_nodes {
-            key.nodes.push(node);
-        }
+        return key;
     }
 
     fn create_leaf_nodes(counts: HashMap<u8, u32>) -> Vec<Node> {
@@ -146,8 +138,8 @@ impl Key {
         return counts;
     }
 
-    fn queue_nodes(nodes: &mut Vec<Node>) -> BinaryHeap<Reverse<&mut Node>> {
-        let mut queue: BinaryHeap<Reverse<&mut Node>> = BinaryHeap::new();
+    fn queue_nodes(nodes: Vec<Node>) -> BinaryHeap<Reverse<Node>> {
+        let mut queue: BinaryHeap<Reverse<Node>> = BinaryHeap::new();
 
         for node in nodes {
             queue.push(Reverse(node));
@@ -156,32 +148,41 @@ impl Key {
         return queue;
     }
 
-    fn assemble_tree(mut queue: BinaryHeap<Reverse<&mut Node>>, mut next_index: usize) -> Vec<Node> {
+    fn assemble_tree(mut queue: BinaryHeap<Reverse<Node>>, mut next_index: usize) -> (usize, Vec<Node>) {
         // The thinking here is to have a place to put the new nodes to live.
-        let mut new_nodes = Vec::new();
+        let mut output_nodes = Vec::new();
 
         let first_parent = next_index;
 
         // This loop will take the two next nodes, and create a new parent for these two nodes, and
         // link them by index.
         while queue.len() > 1 {
-            let left: &mut Node = queue.pop().unwrap().0;
-            let right = queue.pop().unwrap().0;
+            let mut left = queue.pop().unwrap().0;
+            let mut right = queue.pop().unwrap().0;
+
             let weight = left.weight + right.weight;
 
             let mut parent = Node::new(weight, None, next_index);
+
             parent.left_idx = Some(left.index);
             parent.right_idx = Some(right.index);
 
             left.parent_idx = Some(parent.index);
             right.parent_idx = Some(parent.index);
 
-            new_nodes.push(parent);
+            output_nodes.push(left);
+            output_nodes.push(right);
+
+            queue.push(Reverse(parent));
 
             next_index += 1;
         }
 
-        return new_nodes;
+        // last node is root
+        let root = queue.pop().unwrap().0;
+        let root_index = root.index;
+
+        return (root_index, output_nodes);
     }
 }
 
@@ -233,12 +234,12 @@ mod tests { use super::*;
         mod queue_nodes { use super::*;
             #[test]
             fn test_returns_expected_output() {
-                let mut nodes = Vec::from([
+                let nodes = Vec::from([
                     Node::new(5, Some(b'a'), 0),
                     Node::new(10, Some(b'b'), 1)
                 ]);
 
-                let mut queue = Key::queue_nodes(&mut nodes);
+                let mut queue = Key::queue_nodes(nodes);
 
                 let n1 = queue.pop().unwrap().0;
                 assert_eq!(n1.weight, 5);
