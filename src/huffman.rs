@@ -12,16 +12,19 @@ pub struct App;
 
 struct File;
 
+#[derive(Debug)]
 struct Key {
     nodes: Vec<Node>,
     root_idx: Option<usize>
 }
 
+struct KeyBuilder;
+
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug)]
 struct Node {
     weight: u32,
     value: Option<u8>,
-    index: usize,
+    index: Option<usize>,
     parent_idx: Option<usize>,
     left_idx: Option<usize>,
     right_idx: Option<usize>
@@ -29,22 +32,46 @@ struct Node {
 
 impl App {
     pub fn run() {
-        let args: Vec<String> = env::args().collect();
+        Self::exit_if_no_piped_input();
 
+        let args = Self::read_cli_args();
+        let mode = Self::determine_mode(&args);
+
+        Self::invoke_action(mode);
+    }
+
+    fn read_cli_args() -> Vec<String> { env::args().collect() }
+
+    fn determine_mode(args: &Vec<String>) -> &str {
         let encode_selected = args.iter().any(|a| a == "--encode");
         let decode_selected = args.iter().any(|a| a == "--decode");
 
         if !encode_selected && !decode_selected {
-            println!("Must specify either --encode or --decode");
+            println!("Must specify either --encode or --decode, you didn't specify either one!");
             std::process::exit(1);
         }
 
-        if io::stdin().is_terminal() {
-            println!("Error: No piped input. You must provide some input via standard input.");
+        if encode_selected && decode_selected {
+            println!("You must specify only one of either --encode or --decode, not both!");
             std::process::exit(1);
         }
 
         if encode_selected {
+            return "encode";
+        } else {
+            return "decode";
+        }
+    }
+
+    fn exit_if_no_piped_input() {
+        if io::stdin().is_terminal() {
+            println!("Error: No piped input. You must provide some input via standard input.");
+            std::process::exit(1);
+        }
+    }
+
+    fn invoke_action(mode: &str) {
+        if mode == "encode" {
             File::encode(&mut io::stdin(), &mut io::stdout());
         } else {
             File::decode(io::stdin(), io::stdout());
@@ -53,11 +80,11 @@ impl App {
 }
 
 impl Node {
-    pub fn new(weight: u32, value: Option<u8>, index: usize) -> Node {
+    pub fn new(weight: u32, value: Option<u8>) -> Node {
         Node {
             weight: weight,
             value: value,
-            index: index,
+            index: None,
             parent_idx: None,
             left_idx: None,
             right_idx: None,
@@ -67,54 +94,49 @@ impl Node {
 
 impl File {
     pub fn encode<R: Read, W: Write>(input: &mut R, output: &mut W) {
-        let id = Uuid::new_v4();
-
-        let mut temp_file = std::fs::File::create(format!("/tmp/{id}"))
-            .expect("Failed to create temporary file.");
-
-        copy(input, &mut temp_file)
-            .expect("Failed to save input to temporary file.");
-
-        let key = Key::build_from_stream(temp_file);
+        let tempfile_path = Self::copy_to_tempfile(input);
+        let tempfile = Self::open_tempfile(&tempfile_path);
+        let key = Key::build(tempfile);
     }
 
     pub fn decode(in_stream: impl std::io::Read, out_stream: impl std::io::Write) {
 
     }
-}
 
-impl Key {
-    fn new() -> Key {
-        Key {
-            nodes: Vec::new(),
-            root_idx: None
+    fn open_tempfile(path: &String) -> std::fs::File {
+        match std::fs::File::open(path) {
+            Err(err) => { panic!("Unable to open tempfile for reading: {path}"); },
+            Ok(result) => result
         }
     }
 
-    pub fn build_from_stream(in_stream: impl std::io::Read) -> Key {
+    fn copy_to_tempfile<R: Read>(input: &mut R) -> String {
+        let id = Uuid::new_v4();
+        let path = format!("/tmp/{id}");
+
+        let mut temp_file = std::fs::File::create(&path)
+            .expect("Failed to create temporary file.");
+
+        copy(input, &mut temp_file)
+            .expect("Failed to save input to temporary file.");
+
+        return path;
+    }
+}
+
+impl KeyBuilder {
+    fn new(in_stream: impl std::io::Read) -> Key {
         let mut key = Key::new();
 
-        let counts = Key::count_frequencies(in_stream);
-        let leaf_nodes = Key::create_leaf_nodes(counts);
-        let next_index = leaf_nodes.len();
-        let queue = Key::queue_nodes(leaf_nodes);
-        let (root_idx, nodes) = Key::assemble_tree(queue, next_index);
+        let counts = KeyBuilder::count_frequencies(in_stream);
+        let leaf_nodes = KeyBuilder::create_leaf_nodes(counts);
+        let queue = KeyBuilder::queue_nodes(leaf_nodes);
+        let (root_idx, nodes) = KeyBuilder::assemble_tree(queue);
 
-        key.root_idx = Some(root_idx);
+        key.root_idx = root_idx;
         key.nodes = nodes;
 
         return key;
-    }
-
-    fn create_leaf_nodes(counts: HashMap<u8, u32>) -> Vec<Node> {
-        let mut nodes = Vec::new();
-
-        for (i, (byte, freq)) in counts.into_iter().enumerate() {
-            let node = Node::new(freq, Some(byte), i);
-            nodes.push(node);
-        }
-
-        return nodes;
     }
 
     fn count_frequencies(mut in_stream: impl std::io::Read) -> HashMap<u8, u32> {
@@ -138,6 +160,18 @@ impl Key {
         return counts;
     }
 
+    fn create_leaf_nodes(counts: HashMap<u8, u32>) -> Vec<Node> {
+        let mut nodes = Vec::new();
+
+        for (byte, freq) in counts.into_iter() {
+            let node = Node::new(freq, Some(byte));
+            nodes.push(node);
+        }
+
+        return nodes;
+    }
+
+    // Queue the nodes using a min-heap
     fn queue_nodes(nodes: Vec<Node>) -> BinaryHeap<Reverse<Node>> {
         let mut queue: BinaryHeap<Reverse<Node>> = BinaryHeap::new();
 
@@ -148,11 +182,9 @@ impl Key {
         return queue;
     }
 
-    fn assemble_tree(mut queue: BinaryHeap<Reverse<Node>>, mut next_index: usize) -> (usize, Vec<Node>) {
+    fn assemble_tree(mut queue: BinaryHeap<Reverse<Node>>) -> (Option<usize>, Vec<Node>) {
         // The thinking here is to have a place to put the new nodes to live.
         let mut output_nodes = Vec::new();
-
-        let first_parent = next_index;
 
         // This loop will take the two next nodes, and create a new parent for these two nodes, and
         // link them by index.
@@ -160,40 +192,70 @@ impl Key {
             let mut left = queue.pop().unwrap().0;
             let mut right = queue.pop().unwrap().0;
 
+            left.index = Some(output_nodes.len());
+            right.index = Some(output_nodes.len() + 1);
+
             let weight = left.weight + right.weight;
 
-            let mut parent = Node::new(weight, None, next_index);
+            let mut parent = Node::new(weight, None);
 
-            parent.left_idx = Some(left.index);
-            parent.right_idx = Some(right.index);
+            parent.left_idx = left.index;
+            parent.right_idx = right.index;
 
-            left.parent_idx = Some(parent.index);
-            right.parent_idx = Some(parent.index);
+            left.parent_idx = parent.index;
+            right.parent_idx = parent.index;
 
+            // We need to make sure that the leaf nodes `index` attribute matches where they
+            // actually end up in the vector. If a leaf node has index=5, but it's actually sitting
+            // in index=7, that's a problem.
             output_nodes.push(left);
             output_nodes.push(right);
 
             queue.push(Reverse(parent));
-
-            next_index += 1;
         }
 
         // last node is root
-        let root = queue.pop().unwrap().0;
+        let mut root = queue.pop().unwrap().0;
+        root.index = Some(output_nodes.len());
         let root_index = root.index;
+        output_nodes.push(root);
 
         return (root_index, output_nodes);
+    }
+}
+
+impl Key {
+    fn new() -> Key {
+        Key {
+            nodes: Vec::new(),
+            root_idx: None
+        }
+    }
+
+    pub fn build(in_stream: impl std::io::Read) -> Key {
+        KeyBuilder::new(in_stream)
+    }
+
+    pub fn root(&self) -> &Node {
+        & self.nodes[self.root_idx.unwrap()]
     }
 }
 
 #[cfg(test)]
 mod tests { use super::*;
     mod key { use super::*;
+        #[test]
+        fn test_root_returns_correct_node() {
+
+        }
+    }
+
+    mod key_builder { use super::*;
         mod count_frequencies { use super::*;
             #[test]
             fn test_produces_expected_counts() {
                 let input = [b'a', b'a', b'a', b'a', b'b', b'c'];
-                let counts = Key::count_frequencies(&input[..]);
+                let counts = KeyBuilder::count_frequencies(&input[..]);
 
                 assert_eq!(counts.get(&b'a'), Some(&4));
                 assert_eq!(counts.get(&b'b'), Some(&1));
@@ -203,7 +265,7 @@ mod tests { use super::*;
             #[test]
             fn test_does_not_count_null_bytes() {
                 let input = [b'a', b'a', b'a', b'a', b'b', b'c'];
-                let counts = Key::count_frequencies(&input[..]);
+                let counts = KeyBuilder::count_frequencies(&input[..]);
 
                 assert_eq!(counts.get(&0), None);
             }
@@ -218,7 +280,7 @@ mod tests { use super::*;
                     (b'c', 20)
                 ]);
 
-                let output_nodes = Key::create_leaf_nodes(input);
+                let output_nodes = KeyBuilder::create_leaf_nodes(input);
 
                 let n1 = output_nodes.iter().find(|node| node.value == Some(b'a')).unwrap();
                 assert_eq!(n1.weight, 5);
@@ -235,11 +297,11 @@ mod tests { use super::*;
             #[test]
             fn test_returns_expected_output() {
                 let nodes = Vec::from([
-                    Node::new(5, Some(b'a'), 0),
-                    Node::new(10, Some(b'b'), 1)
+                    Node::new(5, Some(b'a')),
+                    Node::new(10, Some(b'b'))
                 ]);
 
-                let mut queue = Key::queue_nodes(nodes);
+                let mut queue = KeyBuilder::queue_nodes(nodes);
 
                 let n1 = queue.pop().unwrap().0;
                 assert_eq!(n1.weight, 5);
@@ -248,6 +310,37 @@ mod tests { use super::*;
                 let n1 = queue.pop().unwrap().0;
                 assert_eq!(n1.weight, 10);
                 assert_eq!(n1.value, Some(b'b'));
+            }
+        }
+
+        mod assemble_tree { use super::*;
+            #[test]
+            fn test_returns_expected_output() {
+                let queue: BinaryHeap<Reverse<Node>> = BinaryHeap::from([
+                    Reverse(Node::new(3, Some(b'a'))),
+                    Reverse(Node::new(2, Some(b'b'))),
+                    Reverse(Node::new(1, Some(b'c'))),
+                ]);
+
+                let (root, nodes) = KeyBuilder::assemble_tree(queue);
+
+                let current = & nodes[root.unwrap()];
+                let left = & nodes[current.left_idx.unwrap()];
+                let right = & nodes[current.right_idx.unwrap()];
+
+                assert_eq!(current.weight, 6);
+                assert_eq!(right.value.unwrap(), b'a');
+                assert_eq!(left.value, None);
+
+                // now we move to the left node
+                
+                let current = left;
+                let left = & nodes[current.left_idx.unwrap()];
+                let right = & nodes[current.right_idx.unwrap()];
+
+                assert_eq!(current.weight, 3);
+                assert_eq!(left.value.unwrap(), b'c');
+                assert_eq!(right.value.unwrap(), b'b');
             }
         }
     }
