@@ -97,6 +97,8 @@ impl File {
         let tempfile_path = Self::copy_to_tempfile(input);
         let tempfile = Self::open_tempfile(&tempfile_path);
         let key = Key::build(tempfile);
+
+        // Now we have a fully constructed key! Now let's encode characters with it!
     }
 
     pub fn decode(in_stream: impl std::io::Read, out_stream: impl std::io::Write) {
@@ -236,8 +238,12 @@ impl Key {
         KeyBuilder::new(in_stream)
     }
 
-    pub fn root(&self) -> &Node {
+    fn root(&self) -> &Node {
         & self.nodes[self.root_idx.unwrap()]
+    }
+
+    fn encode_byte(byte: u8) {
+
     }
 }
 
