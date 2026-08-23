@@ -11,6 +11,7 @@ use uuid::Uuid;
 pub struct App;
 
 struct File;
+struct BufferedEncoder;
 
 #[derive(Debug)]
 struct Key {
@@ -123,6 +124,14 @@ impl File {
             .expect("Failed to save input to temporary file.");
 
         return path;
+    }
+}
+
+impl BufferedEncoder {
+    pub fn new() -> Self {
+        Self {
+
+        }
     }
 }
 
