@@ -1,10 +1,10 @@
 #![allow(unused_variables)]
 
-use std::collections::{HashMap, BinaryHeap};
+use std::collections::{HashMap, BinaryHeap, VecDeque};
 use std::cmp::Reverse;
 
 use std::env;
-use std::io::{self, IsTerminal, copy, Read, Write};
+use std::io::{self, IsTerminal, copy, Read, Write, Seek};
 
 use uuid::Uuid;
 
@@ -96,10 +96,12 @@ impl Node {
 impl File {
     pub fn encode<R: Read, W: Write>(input: &mut R, output: &mut W) {
         let tempfile_path = Self::copy_to_tempfile(input);
-        let tempfile = Self::open_tempfile(&tempfile_path);
-        let key = Key::build(tempfile);
+        let mut tempfile = Self::open_tempfile(&tempfile_path);
 
-        // Now we have a fully constructed key! Now let's encode characters with it!
+        let key = Key::build(&mut tempfile);
+        tempfile.rewind().expect("Unable to rewind the temporary file that holds program input.");
+
+        BufferedEncoder::run(&mut tempfile, output, key);
     }
 
     pub fn decode(in_stream: impl std::io::Read, out_stream: impl std::io::Write) {
@@ -128,9 +130,21 @@ impl File {
 }
 
 impl BufferedEncoder {
-    pub fn new() -> Self {
-        Self {
+    const BUFFER_SIZE: usize = 1024;
 
+    pub fn run<W: Write>(input: &mut std::fs::File, output: &mut W, key: Key) {
+        let input_buffer: [u8; Self::BUFFER_SIZE] = [0; Self::BUFFER_SIZE];
+        let mut bit_buffer: VecDeque<bool> = VecDeque::new();
+
+        for byte in input_buffer {
+            let result_bits = key.encode(byte);
+            for bit in result_bits {
+                if bit_buffer.len() < Self::BUFFER_SIZE {
+                    bit_buffer.push_back(bit);
+                } else {
+                    // dump the buffer
+                }
+            }
         }
     }
 }
@@ -243,16 +257,16 @@ impl Key {
         }
     }
 
-    pub fn build(in_stream: impl std::io::Read) -> Key {
-        KeyBuilder::new(in_stream)
+    pub fn build(in_file: &mut std::fs::File) -> Key {
+        KeyBuilder::new(in_file)
+    }
+
+    pub fn encode(&self, byte: u8) -> Vec<bool> {
+        Vec::from([true])
     }
 
     fn root(&self) -> &Node {
         & self.nodes[self.root_idx.unwrap()]
-    }
-
-    fn encode_byte(byte: u8) {
-
     }
 }
 
