@@ -9,6 +9,8 @@ impl BufferedEncoder {
     const BUFFER_SIZE: usize = 1024;
 
     pub fn run<W: Write>(input: &mut std::fs::File, output: &mut W, key: Key) {
+        Self::write_key_segment(output, &key);
+
         let input_buffer: [u8; Self::BUFFER_SIZE] = [0; Self::BUFFER_SIZE];
         let mut bit_buffer: VecDeque<bool> = VecDeque::new();
 
@@ -22,5 +24,22 @@ impl BufferedEncoder {
                 }
             }
         }
+    }
+
+    fn write_key_segment<W: Write>(output: &mut W, key: &Key) {
+        let key_bytes = key.serialize();
+
+        let key_length = key_bytes.len() as u16;
+
+        let high_byte: u8 = (key_length >> 8) as u8;
+        let low_byte: u8 = (key_length & 0xff) as u8;
+
+        let count_segment = [high_byte, low_byte];
+
+        output.write(&count_segment)
+            .expect("Failed to write key count segment.");
+
+        output.write(&key_bytes[..])
+            .expect("Failed to write key segment.");
     }
 }

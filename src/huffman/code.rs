@@ -70,6 +70,17 @@ impl Key {
         Vec::from([true])
     }
 
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut output = Vec::new();
+
+        for node in &self.nodes {
+            let mut node_bytes = node.serialize();
+            output.append(&mut node_bytes);
+        }
+
+        return output;
+    }
+
     fn root(&self) -> &Node {
         & self.nodes[usize::from(self.root)]
     }
