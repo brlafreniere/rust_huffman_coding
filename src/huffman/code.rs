@@ -190,6 +190,22 @@ mod tests { use super::*;
 
                 assert_eq!(bytes.len(), 2);
             }
+
+            #[test]
+            fn test_node_with_left_and_right() {
+                let node = Node { byte: None, left: Some(500), right: Some(400) };
+                let bytes = node.serialize();
+
+                assert_eq!(bytes[0], Node::LEFT_PRESENCE | Node::RIGHT_PRESENCE);
+                // 500 = b1: 00000001, b2: 11110100
+                assert_eq!(bytes[1], 0b0000_0001);
+                assert_eq!(bytes[2], 0b1111_0100);
+                // 400 = b1: 00000001, b2: 1001_0000
+                assert_eq!(bytes[3], 0b0000_0001);
+                assert_eq!(bytes[4], 0b1001_0000);
+
+                assert_eq!(bytes.len(), 5);
+            }
         }
     }
 
