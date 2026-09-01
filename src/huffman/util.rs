@@ -68,6 +68,26 @@ mod tests {
 
         let output_byte = output.pop_front().unwrap();
 
-        assert_eq!(output_byte, 0b11001101);
+        assert_eq!(output_byte, 0b1100_1101);
+    }
+
+    #[test]
+    fn test_bit_buffer_output_2() {
+        let input: Vec<bool> = Vec::from([true, true, false, false, true, true, false, true, true]);
+        let mut output: VecDeque<u8> = VecDeque::new();
+
+        let mut buffer = BitBuffer::new(&mut output);
+
+        for bool in input {
+            buffer.push(bool);
+        }
+
+        buffer.dump();
+
+        let byte_1 = output.pop_front().unwrap();
+        let byte_2 = output.pop_front().unwrap();
+
+        assert_eq!(byte_1, 0b1100_1101);
+        assert_eq!(byte_2, 0b1000_0000);
     }
 }
