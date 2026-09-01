@@ -21,7 +21,7 @@ impl<'a, W: Write> BitBuffer<'a, W> {
         self.buffer.push(bit);
     }
 
-    fn dump(&mut self) {
+    pub fn dump(&mut self) {
         let mut bytes = Vec::new();
 
         while self.buffer.len() > 0 {
@@ -50,9 +50,24 @@ impl<'a, W: Write> BitBuffer<'a, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use super::BitBuffer;
 
     #[test]
     fn test_bit_buffer_output_1() {
-        // let buffer = BitBuffer::new();
+        let input: Vec<bool> = Vec::from([true, true, false, false, true, true, false, true]);
+        let mut output: VecDeque<u8> = VecDeque::new();
+
+        let mut buffer = BitBuffer::new(&mut output);
+
+        for bool in input {
+            buffer.push(bool);
+        }
+
+        buffer.dump();
+
+        let output_byte = output.pop_front().unwrap();
+
+        assert_eq!(output_byte, 0b11001101);
     }
 }

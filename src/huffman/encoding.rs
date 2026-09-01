@@ -1,34 +1,42 @@
-use std::io::Write;
+use std::io::{Write, BufReader, Read};
 use std::collections::VecDeque;
 
 use super::code::Key;
 use super::util::BitBuffer;
 
-pub struct BufferedEncoder;
+pub struct BufferedEncoder<W: Write> {
+    input: std::fs::File,
+    output: W,
+    key: Key
+}
 
-impl BufferedEncoder {
-    const BUFFER_SIZE: usize = 1024;
-
-    pub fn run<W: Write>(input: &mut std::fs::File, output: &mut W, key: Key) {
-        Self::write_key_segment(output, &key);
-
-        let input_buffer: [u8; Self::BUFFER_SIZE] = [0; Self::BUFFER_SIZE];
-        let mut bit_buffer = BitBuffer::new(output);
-
-        // for byte in input_buffer {
-        //     let result_bits = key.encode(byte);
-        //     for bit in result_bits {
-        //         if bit_buffer.len() < Self::BUFFER_SIZE {
-        //             bit_buffer.push_back(bit);
-        //         } else {
-        //             // dump the buffer
-        //         }
-        //     }
-        // }
+impl<W: Write> BufferedEncoder<W> {
+    pub fn new(input: std::fs::File, output: W, key: Key) -> Self {
+        Self { input: input, output: output, key: key }
     }
 
-    fn write_key_segment<W: Write>(output: &mut W, key: &Key) {
-        let key_bytes = key.serialize();
+    pub fn run(&mut self) {
+        self.write_key_segment();
+        self.write_data_segment();
+    }
+
+    fn write_data_segment(&mut self) {
+        let mut bit_buffer = BitBuffer::new(&mut self.output);
+
+        let input_reader = BufReader::new(&self.input);
+
+        for byte in input_reader.bytes() {
+            let encoded_bits = self.key.encode(byte.unwrap());
+            for bit in encoded_bits {
+                bit_buffer.push(bit);
+            }
+        }
+
+        bit_buffer.dump();
+    }
+
+    fn write_key_segment(&mut self) {
+        let key_bytes = self.key.serialize();
 
         let key_length = key_bytes.len() as u16;
 
@@ -37,10 +45,10 @@ impl BufferedEncoder {
 
         let count_segment = [high_byte, low_byte];
 
-        output.write(&count_segment)
+        self.output.write(&count_segment)
             .expect("Failed to write key count segment.");
 
-        output.write(&key_bytes[..])
+        self.output.write(&key_bytes[..])
             .expect("Failed to write key segment.");
     }
 }
