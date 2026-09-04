@@ -71,7 +71,11 @@ mod tests {
         // 3 * 2 = 6 bytes.
         // 2 * 5 = 10 bytes.
         // total = 16
+        // 
+        //
         
         assert_eq!(output.len(), 18);
+        assert_eq!(output[0], 0b0000_0000);
+        assert_eq!(output[1], 0b0001_0000);
     }
 }
