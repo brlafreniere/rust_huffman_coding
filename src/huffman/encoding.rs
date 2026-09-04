@@ -1,32 +1,24 @@
 use std::io::{Write, BufReader, Read};
-use std::collections::VecDeque;
 
 use super::code::Key;
 use super::util::BitBuffer;
 
-pub struct BufferedEncoder<W: Write> {
-    input: std::fs::File,
-    output: W,
-    key: Key
-}
+pub struct BufferedEncoder;
 
-impl<W: Write> BufferedEncoder<W> {
-    pub fn new(input: std::fs::File, output: W, key: Key) -> Self {
-        Self { input: input, output: output, key: key }
+impl BufferedEncoder
+{
+    pub fn run<R: Read, W: Write>(input: &mut R, output: &mut W, key: &Key) {
+        Self::write_key_segment(output, key);
+        Self::write_data_segment(input, output, key);
     }
 
-    pub fn run(&mut self) {
-        self.write_key_segment();
-        self.write_data_segment();
-    }
+    fn write_data_segment<R: Read, W: Write>(input: R, output: &mut W, key: &Key) {
+        let mut bit_buffer = BitBuffer::new(output);
 
-    fn write_data_segment(&mut self) {
-        let mut bit_buffer = BitBuffer::new(&mut self.output);
-
-        let input_reader = BufReader::new(&self.input);
+        let input_reader = BufReader::new(input);
 
         for byte in input_reader.bytes() {
-            let encoded_bits = self.key.encode(byte.unwrap());
+            let encoded_bits = key.encode(byte.unwrap());
             for bit in encoded_bits {
                 bit_buffer.push(bit);
             }
@@ -35,8 +27,8 @@ impl<W: Write> BufferedEncoder<W> {
         bit_buffer.dump();
     }
 
-    fn write_key_segment(&mut self) {
-        let key_bytes = self.key.serialize();
+    fn write_key_segment<W: Write>(output: &mut W, key: &Key) {
+        let key_bytes = key.serialize();
 
         let key_length = key_bytes.len() as u16;
 
@@ -45,10 +37,41 @@ impl<W: Write> BufferedEncoder<W> {
 
         let count_segment = [high_byte, low_byte];
 
-        self.output.write(&count_segment)
+        output.write(&count_segment)
             .expect("Failed to write key count segment.");
 
-        self.output.write(&key_bytes[..])
+        output.write(&key_bytes[..])
             .expect("Failed to write key segment.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    #[test]
+    fn test_write_key_segment() {
+        let mut input = VecDeque::new();
+        let mut output = VecDeque::new();
+
+        input.append(&mut VecDeque::from([b'd'; 100]));
+        input.append(&mut VecDeque::from([b'k'; 50]));
+        input.append(&mut VecDeque::from([b'm'; 10]));
+
+        let key = Key::build(&mut input);
+
+        BufferedEncoder::write_key_segment(&mut output, &key);
+
+        // There should be 3 leaf nodes, and 2 stem nodes.
+        //
+        // * 1 leaf node has a byte value, and no left/right, thus 1 leaf node has 2 bytes.
+        // * 1 stem node has both left and right indices, but no byte value, which is 5 bytes.
+        //
+        // 3 * 2 = 6 bytes.
+        // 2 * 5 = 10 bytes.
+        // total = 16
+        
+        assert_eq!(output.len(), 18);
     }
 }

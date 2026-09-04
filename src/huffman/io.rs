@@ -7,15 +7,14 @@ use std::io::{Read, Write, Seek, copy};
 use uuid::Uuid;
 
 impl File {
-    pub fn encode<R: Read, W: Write>(mut input: R, output: W) {
-        let tempfile_path = Self::copy_to_tempfile(&mut input);
+    pub fn encode<R: Read, W: Write>(input: &mut R, output: &mut W) {
+        let tempfile_path = Self::copy_to_tempfile(input);
         let mut tempfile = Self::open_tempfile(&tempfile_path);
 
         let key = Key::build(&mut tempfile);
         tempfile.rewind().expect("Unable to rewind the temporary file that holds program input.");
 
-        let mut encoder = BufferedEncoder::new(tempfile, output, key);
-        encoder.run();
+        BufferedEncoder::run(&mut tempfile, output, &key);
     }
 
     pub fn decode(in_stream: impl std::io::Read, out_stream: impl std::io::Write) {

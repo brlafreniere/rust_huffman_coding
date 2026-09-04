@@ -1,5 +1,6 @@
 use std::collections::{HashMap, BinaryHeap};
 use std::cmp::Reverse;
+use std::io::Read;
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug)]
 struct Node {
@@ -62,7 +63,7 @@ impl Node {
 }
 
 impl Key {
-    pub fn build(in_file: &mut std::fs::File) -> Key {
+    pub fn build<R: Read>(in_file: &mut R) -> Key {
         KeyBuilder::new(in_file)
     }
 

@@ -51,7 +51,6 @@ impl<'a, W: Write> BitBuffer<'a, W> {
 mod tests {
     use super::*;
     use std::collections::VecDeque;
-    use super::BitBuffer;
 
     #[test]
     fn test_bit_buffer_output_1() {

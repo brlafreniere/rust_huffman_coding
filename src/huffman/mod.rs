@@ -54,7 +54,7 @@ impl App {
 
     fn invoke_action(mode: &str) {
         if mode == "encode" {
-            File::encode(std::io::stdin(), std::io::stdout());
+            File::encode(&mut std::io::stdin(), &mut std::io::stdout());
         } else {
             File::decode(std::io::stdin(), std::io::stdout());
         }
