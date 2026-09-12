@@ -22,6 +22,11 @@ impl Node {
     const VALUE_PRESENCE: u8 = 0b0000_0010;
     const RIGHT_PRESENCE: u8 = 0b0000_0001;
 
+    // There will only be two types of nodes: 
+    // 1. Leaf nodes which have a byte value, and no children.
+    // 2. Parent nodes which have no byte value, and just connect child nodes.
+    // 
+    // So we only need to test those two cases.
     pub fn serialize(&self) -> Vec<u8> {
         let mut output: Vec<u8> = Vec::new();
 
