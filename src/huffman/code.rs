@@ -193,7 +193,7 @@ mod tests { use super::*;
     mod node { use super::*;
         mod serialize { use super::*;
             #[test]
-            fn test_node_with_only_byte() {
+            fn test_leaf_node() {
                 let node = Node { byte: Some(b'a'), left: None, right: None };
                 let bytes = node.serialize();
 
@@ -204,7 +204,7 @@ mod tests { use super::*;
             }
 
             #[test]
-            fn test_node_with_left_and_right() {
+            fn test_stem_node() {
                 let node = Node { byte: None, left: Some(500), right: Some(400) };
                 let bytes = node.serialize();
 
