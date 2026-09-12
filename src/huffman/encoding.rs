@@ -72,10 +72,15 @@ mod tests {
         // 2 * 5 = 10 bytes.
         // total = 16
         // 
-        //
-        
+        // 2 bytes to indicate key length
+        // 16 byte key
+        // = 18 bytes written out
         assert_eq!(output.len(), 18);
+
+        // First byte = 16, representing the 16 bytes used to serialize the key
         assert_eq!(output[0], 0b0000_0000);
         assert_eq!(output[1], 0b0001_0000);
+
+        // The correct serialization of nodes is already tested elsewhere.
     }
 }
