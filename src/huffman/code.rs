@@ -1,4 +1,4 @@
-use std::collections::{HashMap, BinaryHeap};
+use std::collections::{HashMap, BinaryHeap, VecDeque};
 use std::cmp::Reverse;
 use std::io::Read;
 
@@ -96,6 +96,11 @@ impl KeyBuilder {
     fn new(in_stream: impl std::io::Read) -> Key {
         let counts = KeyBuilder::count_frequencies(in_stream);
         let leaf_nodes = KeyBuilder::create_leaf_nodes(counts);
+
+        if leaf_nodes.len() == 0 {
+            panic!("Cannot construct a key from empty input.");
+        }
+
         let queue = KeyBuilder::build_queue(leaf_nodes);
         let (root_index, nodes) = KeyBuilder::process_queue(queue);
         return Key { nodes: nodes, root: root_index };
@@ -195,6 +200,16 @@ impl KeyBuilder {
 
 #[cfg(test)]
 mod tests { use super::*;
+    mod key { use super::*;
+        mod encode { use super::*;
+            #[test]
+            fn test_encode() {
+                let mut input = VecDeque::new();
+                Key::build(&mut input);
+            }
+        }
+    }
+
     mod node { use super::*;
         mod serialize { use super::*;
             #[test]

@@ -83,4 +83,9 @@ mod tests {
 
         // The correct serialization of nodes is already tested elsewhere.
     }
+
+    #[test]
+    fn test_write_data_segment() {
+
+    }
 }
