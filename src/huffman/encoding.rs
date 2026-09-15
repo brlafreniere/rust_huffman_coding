@@ -19,8 +19,14 @@ impl BufferedEncoder
 
         for byte in input_reader.bytes() {
             let encoded_bits = key.encode(byte.unwrap());
-            for bit in encoded_bits {
-                bit_buffer.push(bit);
+
+            if encoded_bits.is_some() {
+                for bit in encoded_bits.unwrap() {
+                    bit_buffer.push(bit);
+                }
+            } else {
+                // This means we have passed an input byte to our code key, and received nothing
+                // back... which is a big problem-o! We may need to panic! here.
             }
         }
 

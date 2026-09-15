@@ -15,6 +15,8 @@ pub struct Key {
     root: u16
 }
 
+pub struct KeyQuery;
+
 struct KeyBuilder;
 
 impl Node {
@@ -72,8 +74,8 @@ impl Key {
         KeyBuilder::new(in_file)
     }
 
-    pub fn encode(&self, byte: u8) -> Vec<bool> {
-        Vec::from([true])
+    pub fn encode(&self, byte: u8) -> Option<Vec<bool>> {
+        KeyQuery::find_bits_for(byte, self)
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -87,8 +89,47 @@ impl Key {
         return output;
     }
 
-    fn root(&self) -> &Node {
+    fn root_node(&self) -> &Node {
         & self.nodes[usize::from(self.root)]
+    }
+}
+
+type QueueEntry = (u16, Vec<bool>);
+type Queue = VecDeque<QueueEntry>;
+
+impl KeyQuery {
+    fn queue_by_index(queue: &mut Queue, index: Option<u16>, bit_seq: Vec<bool>) {
+        if index.is_some() {
+            queue.push_back((index.unwrap(), bit_seq));
+        }
+    }
+
+    fn find_bits_for(byte: u8, key: &Key) -> Option<Vec<bool>> {
+        let mut queue = VecDeque::new();
+
+        let root_node: &Node = key.root_node();
+
+        Self::queue_by_index(&mut queue, root_node.left, Vec::from([false]));
+        Self::queue_by_index(&mut queue, root_node.right, Vec::from([true]));
+
+        while queue.len() != 0 {
+            let (index, bit_seq) = queue.pop_front().unwrap();
+            let node = & key.nodes[usize::from(index)];
+
+            if node.byte.is_some() && node.byte.unwrap() == byte {
+                return Some(bit_seq)
+            }
+
+            let mut left_bit_seq = bit_seq.clone();
+            left_bit_seq.push(false);
+            Self::queue_by_index(&mut queue, node.left, left_bit_seq);
+
+            let mut right_bit_seq = bit_seq.clone();
+            right_bit_seq.push(true);
+            Self::queue_by_index(&mut queue, node.right, right_bit_seq);
+        }
+
+        return None;
     }
 }
 
@@ -204,8 +245,27 @@ mod tests { use super::*;
         mod encode { use super::*;
             #[test]
             fn test_encode() {
+                let input_str = "aaabbc";
                 let mut input = VecDeque::new();
-                Key::build(&mut input);
+
+                for chr in input_str.bytes() { input.push_back(chr) }
+
+                let key = Key::build(&mut input);
+
+                // Since 'a' is the most common character, we should expect 'a' to encode to just
+                // a '1' bit.
+
+                let bits = key.encode(b'a').unwrap();
+
+                assert_eq!(bits, Vec::from([true]));
+
+                let bits = key.encode(b'b').unwrap();
+
+                assert_eq!(bits, Vec::from([false, true]));
+
+                let bits = key.encode(b'c').unwrap();
+
+                assert_eq!(bits, Vec::from([false, false]));
             }
         }
     }
