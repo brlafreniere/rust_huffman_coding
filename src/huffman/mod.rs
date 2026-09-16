@@ -2,7 +2,6 @@
 
 pub mod code;
 pub mod util;
-pub mod encoding;
 pub mod io;
 
 use std::env;
