@@ -8,7 +8,7 @@ pub mod io;
 use std::env;
 use std::io::IsTerminal;
 
-use io::File;
+use io::Operation;
 
 pub struct App;
 
@@ -54,9 +54,9 @@ impl App {
 
     fn invoke_action(mode: &str) {
         if mode == "encode" {
-            File::encode(&mut std::io::stdin(), &mut std::io::stdout());
+            Operation::encode(&mut std::io::stdin(), &mut std::io::stdout());
         } else {
-            File::decode(std::io::stdin(), std::io::stdout());
+            Operation::decode(std::io::stdin(), std::io::stdout());
         }
     }
 }

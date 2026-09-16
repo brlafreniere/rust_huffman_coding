@@ -1,4 +1,4 @@
-pub struct File;
+pub struct Operation;
 
 use super::encoding::BufferedEncoder;
 use super::code::Key;
@@ -6,7 +6,7 @@ use super::code::Key;
 use std::io::{Read, Write, Seek, copy};
 use uuid::Uuid;
 
-impl File {
+impl Operation {
     pub fn encode<R: Read, W: Write>(input: &mut R, output: &mut W) {
         let tempfile_path = Self::copy_to_tempfile(input);
         let mut tempfile = Self::open_tempfile(&tempfile_path);

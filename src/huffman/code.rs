@@ -244,7 +244,7 @@ mod tests { use super::*;
     mod key { use super::*;
         mod encode { use super::*;
             #[test]
-            fn test_encode() {
+            fn test_encode_sample_input_1() {
                 let input_str = "aaabbc";
                 let mut input = VecDeque::new();
 
