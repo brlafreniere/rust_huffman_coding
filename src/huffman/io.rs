@@ -1,16 +1,16 @@
 pub struct Operation;
 pub struct BufferedEncoder;
+pub struct BufferedDecoder;
 
-use super::code::Key;
-use super::util::BitBuffer;
+use super::code::{Key};
+use super::util::{BitBuffer, Byte};
 
 use std::io::{Read, Write, Seek, copy, BufReader};
 use uuid::Uuid;
 
 impl Operation {
     pub fn encode<R: Read, W: Write>(input: &mut R, output: &mut W) {
-        let tempfile_path = Self::copy_to_tempfile(input);
-        let mut tempfile = Self::open_tempfile(&tempfile_path);
+        let mut tempfile = Self::copy_to_tempfile(input);
 
         let key = Key::build(&mut tempfile);
         tempfile.rewind().expect("Unable to rewind the temporary file that holds program input.");
@@ -18,28 +18,20 @@ impl Operation {
         BufferedEncoder::run(&mut tempfile, output, &key);
     }
 
-    pub fn decode(in_stream: impl std::io::Read, out_stream: impl std::io::Write) {
-
+    pub fn decode<R: Read, W: Write>(input: &mut R, output: &mut W) {
+        let mut tempfile = Self::copy_to_tempfile(input);
+        BufferedDecoder::run(&mut tempfile, output);
     }
 
-    fn open_tempfile(path: &String) -> std::fs::File {
-        match std::fs::File::open(path) {
-            Err(err) => { panic!("Unable to open tempfile for reading: {path}"); },
-            Ok(result) => result
-        }
-    }
-
-    fn copy_to_tempfile<R: Read>(input: &mut R) -> String {
+    fn copy_to_tempfile<R: Read>(input: &mut R) -> std::fs::File {
         let id = Uuid::new_v4();
         let path = format!("/tmp/{id}");
 
-        let mut temp_file = std::fs::File::create(&path)
-            .expect("Failed to create temporary file.");
+        let mut temp_file = std::fs::File::create(&path).unwrap();
 
-        copy(input, &mut temp_file)
-            .expect("Failed to save input to temporary file.");
+        copy(input, &mut temp_file).unwrap();
 
-        return path;
+        return std::fs::File::open(path).unwrap();
     }
 }
 
@@ -57,13 +49,8 @@ impl BufferedEncoder {
         for byte in input_reader.bytes() {
             let encoded_bits = key.encode(byte.unwrap());
 
-            if encoded_bits.is_some() {
-                for bit in encoded_bits.unwrap() {
-                    bit_buffer.push(bit);
-                }
-            } else {
-                // This means we have passed an input byte to our code key, and received nothing
-                // back... which is a big problem-o! We may need to panic! here.
+            for bit in encoded_bits.unwrap() {
+                bit_buffer.push(bit);
             }
         }
 
@@ -75,16 +62,20 @@ impl BufferedEncoder {
 
         let key_length = key_bytes.len() as u16;
 
-        let high_byte: u8 = (key_length >> 8) as u8;
-        let low_byte: u8 = (key_length & 0xff) as u8;
-
-        let count_segment = [high_byte, low_byte];
-
-        output.write(&count_segment)
-            .expect("Failed to write key count segment.");
+        Byte::write_u16(output, key_length);
 
         output.write(&key_bytes[..])
             .expect("Failed to write key segment.");
+    }
+}
+
+impl BufferedDecoder {
+    pub fn run<W: Write>(input: &mut std::fs::File, output: &mut W) {
+        let key = Self::load_key(input, output);
+    }
+
+    fn load_key<W: Write>(input: &mut std::fs::File, output: &mut W) -> Key {
+        Key::deserialize(input)
     }
 }
 
@@ -129,7 +120,7 @@ mod tests {
 
     #[test]
     fn test_write_data_segment() {
-
+        
     }
 }
 

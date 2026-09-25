@@ -55,7 +55,7 @@ impl App {
         if mode == "encode" {
             Operation::encode(&mut std::io::stdin(), &mut std::io::stdout());
         } else {
-            Operation::decode(std::io::stdin(), std::io::stdout());
+            Operation::decode(&mut std::io::stdin(), &mut std::io::stdout());
         }
     }
 }

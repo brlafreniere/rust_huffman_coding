@@ -1,6 +1,15 @@
 use std::collections::{HashMap, BinaryHeap, VecDeque};
 use std::cmp::Reverse;
-use std::io::Read;
+use std::io::{Read, Write};
+
+use super::util::Byte;
+
+#[derive(Debug)]
+pub struct Key {
+    nodes: Vec<Node>,
+    root: u16
+}
+pub struct KeyQuery;
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug)]
 struct Node {
@@ -8,15 +17,7 @@ struct Node {
     left: Option<u16>,
     right: Option<u16>
 }
-
-#[derive(Debug)]
-pub struct Key {
-    nodes: Vec<Node>,
-    root: u16
-}
-
-pub struct KeyQuery;
-
+struct KeyDeserializer;
 struct KeyBuilder;
 
 impl Node {
@@ -67,6 +68,25 @@ impl Node {
 
         return output;
     }
+
+    pub fn deserialize(presence: u8, input: &mut impl Read) -> Node {
+        let left = {
+            if presence & Self::LEFT_PRESENCE > 0 { Some(Byte::get_u16(input)) }
+            else { None }
+        };
+
+        let byte = {
+            if presence & Self::VALUE_PRESENCE > 0 { Byte::get_u8(input) }
+            else { None }
+        };
+
+        let right = {
+            if presence & Self::RIGHT_PRESENCE > 0 { Some(Byte::get_u16(input)) }
+            else { None }
+        };
+
+        Node { left, byte, right }
+    }
 }
 
 impl Key {
@@ -89,6 +109,10 @@ impl Key {
         return output;
     }
 
+    pub fn deserialize(input: &mut std::fs::File) -> Key {
+        KeyDeserializer::run(input)
+    }
+
     fn root_node(&self) -> &Node {
         & self.nodes[usize::from(self.root)]
     }
@@ -96,6 +120,37 @@ impl Key {
 
 type QueueEntry = (u16, Vec<bool>);
 type Queue = VecDeque<QueueEntry>;
+
+impl KeyDeserializer {
+    pub fn run(input: &mut impl Read) -> Key {
+        let mut nodes: Vec<Node> = Vec::new();
+
+        let key_length = Byte::get_u16(input);
+
+        let mut key_data = input.take(key_length as u64);
+
+        while let Some(node) = Self::get_next_node(&mut key_data) {
+            nodes.push(node);
+        }
+
+        let root = (nodes.len() - 1) as u16;
+        let key = Key { nodes: nodes, root: root };
+
+        return key;
+    }
+
+    fn get_next_node(input: &mut impl Read) -> Option<Node> {
+        let presence = Byte::get_u8(input);
+
+        if presence.is_none() { return None }
+
+        let presence = presence.unwrap();
+
+        let node = Node::deserialize(presence, input);
+
+        return Some(node);
+    }
+}
 
 impl KeyQuery {
     fn queue_by_index(queue: &mut Queue, index: Option<u16>, bit_seq: Vec<bool>) {
@@ -391,6 +446,43 @@ mod tests { use super::*;
                 assert_eq!(left.byte, Some(b'c'));
                 assert_eq!(right.byte, Some(b'b'));
             }
+        }
+    }
+
+    mod key_deserializer { use super::*;
+        #[test]
+        fn test_run_with_one_node() {
+            let mut input: VecDeque<u8> = VecDeque::new();
+
+            let node_a = Node { byte: Some(b'a'), left: None, right: None };
+            let node_b = Node { byte: Some(b'b'), left: None, right: None };
+            let node_p = Node { byte: None, left: Some(0), right: Some(1) };
+
+            let mut node_bytes: VecDeque<u8> = VecDeque::new();
+
+            for byte in node_a.serialize() { node_bytes.push_back(byte) }
+            for byte in node_b.serialize() { node_bytes.push_back(byte) }
+            for byte in node_p.serialize() { node_bytes.push_back(byte) }
+
+            // The first part of our simulated input will be a u16 representing the length of the
+            // key in bytes
+            Byte::write_u16(&mut input, node_bytes.len() as u16);
+
+            for byte in node_bytes { input.push_back(byte); }
+
+            let key = KeyDeserializer::run(&mut input);
+
+            let node_a = &key.nodes[0];
+            let node_b = &key.nodes[1];
+            let node_p = &key.nodes[2];
+
+            assert_eq!(node_a.byte, Some(b'a'));
+            assert_eq!(node_b.byte, Some(b'b'));
+
+            assert_eq!(node_p.left, Some(0));
+            assert_eq!(node_p.right, Some(1));
+
+            assert_eq!(key.root, 2);
         }
     }
 }
