@@ -4,22 +4,12 @@ use std::io::{Read, Write};
 
 use super::util::Byte;
 
-#[derive(Debug)]
-pub struct Key {
-    nodes: Vec<Node>,
-    root: u16
-}
-pub struct KeyQuery;
-
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug)]
 struct Node {
     byte: Option<u8>,
     left: Option<u16>,
     right: Option<u16>
 }
-struct KeyDeserializer;
-struct KeyBuilder;
-
 impl Node {
     const LEFT_PRESENCE: u8  = 0b0000_0100;
     const VALUE_PRESENCE: u8 = 0b0000_0010;
@@ -89,9 +79,15 @@ impl Node {
     }
 }
 
+
+#[derive(Debug)]
+pub struct Key {
+    nodes: Vec<Node>,
+    root: u16
+}
 impl Key {
-    pub fn build<R: Read>(in_file: &mut R) -> Key {
-        KeyBuilder::new(in_file)
+    pub fn build(input: impl Read) -> Key {
+        KeyBuilder::new(input)
     }
 
     pub fn encode(&self, byte: u8) -> Option<Vec<bool>> {
@@ -109,8 +105,8 @@ impl Key {
         return output;
     }
 
-    pub fn deserialize(input: &mut std::fs::File) -> Key {
-        KeyDeserializer::run(input)
+    pub fn deserialize(mut input: impl Read) -> Key {
+        KeyDeserializer::run(&mut input)
     }
 
     fn root_node(&self) -> &Node {
@@ -118,9 +114,7 @@ impl Key {
     }
 }
 
-type QueueEntry = (u16, Vec<bool>);
-type Queue = VecDeque<QueueEntry>;
-
+struct KeyDeserializer;
 impl KeyDeserializer {
     pub fn run(input: &mut impl Read) -> Key {
         let mut nodes: Vec<Node> = Vec::new();
@@ -151,6 +145,10 @@ impl KeyDeserializer {
         return Some(node);
     }
 }
+
+pub struct KeyQuery;
+type QueueEntry = (u16, Vec<bool>);
+type Queue = VecDeque<QueueEntry>;
 
 impl KeyQuery {
     fn queue_by_index(queue: &mut Queue, index: Option<u16>, bit_seq: Vec<bool>) {
@@ -188,6 +186,7 @@ impl KeyQuery {
     }
 }
 
+struct KeyBuilder;
 impl KeyBuilder {
     fn new(in_stream: impl std::io::Read) -> Key {
         let counts = KeyBuilder::count_frequencies(in_stream);

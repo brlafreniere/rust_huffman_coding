@@ -13,17 +13,24 @@ pub struct App;
 
 impl App {
     pub fn run() {
-        Self::exit_if_no_piped_input();
+        Self::validate_input();
 
-        let args = Self::read_cli_args();
-        let mode = Self::determine_mode(&args);
+        let args = Self::read_program_arguments();
+        let mode = Self::validate_arguments(&args);
 
         Self::invoke_action(mode);
     }
 
-    fn read_cli_args() -> Vec<String> { env::args().collect() }
+    fn validate_input() {
+        if std::io::stdin().is_terminal() {
+            println!("Error: No piped input. You must provide some input via standard input.");
+            std::process::exit(1);
+        }
+    }
 
-    fn determine_mode(args: &Vec<String>) -> &str {
+    fn read_program_arguments() -> Vec<String> { env::args().collect() }
+
+    fn validate_arguments(args: &Vec<String>) -> &str {
         let encode_selected = args.iter().any(|a| a == "--encode");
         let decode_selected = args.iter().any(|a| a == "--decode");
 
@@ -44,18 +51,16 @@ impl App {
         }
     }
 
-    fn exit_if_no_piped_input() {
-        if std::io::stdin().is_terminal() {
-            println!("Error: No piped input. You must provide some input via standard input.");
-            std::process::exit(1);
-        }
-    }
-
     fn invoke_action(mode: &str) {
+        let input = std::io::stdin();
+        let output = std::io::stdout();
+
+        let mut operation = Operation::new(input, output);
+
         if mode == "encode" {
-            Operation::encode(&mut std::io::stdin(), &mut std::io::stdout());
+            operation.encode();
         } else {
-            Operation::decode(&mut std::io::stdin(), &mut std::io::stdout());
+            operation.decode();
         }
     }
 }

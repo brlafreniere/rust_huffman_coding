@@ -1,29 +1,33 @@
-pub struct Operation;
-pub struct BufferedEncoder;
-pub struct BufferedDecoder;
-
 use super::code::{Key};
 use super::util::{BitBuffer, Byte};
 
 use std::io::{Read, Write, Seek, copy, BufReader};
+use std::fs::File;
 use uuid::Uuid;
 
-impl Operation {
-    pub fn encode<R: Read, W: Write>(input: &mut R, output: &mut W) {
-        let mut tempfile = Self::copy_to_tempfile(input);
+pub struct Operation<R: Read, W: Write> {
+    input: R,
+    output: W,
+    tempfile: File
+}
 
-        let key = Key::build(&mut tempfile);
-        tempfile.rewind().expect("Unable to rewind the temporary file that holds program input.");
-
-        BufferedEncoder::run(&mut tempfile, output, &key);
+impl<W: Write, R: Read> Operation<R, W> {
+    pub fn new(mut input: R, output: W) -> Operation<R, W> {
+        let tempfile = Self::copy_to_tempfile(&mut input);
+        Operation { input, output, tempfile }
     }
 
-    pub fn decode<R: Read, W: Write>(input: &mut R, output: &mut W) {
-        let mut tempfile = Self::copy_to_tempfile(input);
-        BufferedDecoder::run(&mut tempfile, output);
+    pub fn encode(&mut self) {
+        let mut encoder = BufferedEncoder::new(&mut self.tempfile, &mut self.output);
+        encoder.run();
     }
 
-    fn copy_to_tempfile<R: Read>(input: &mut R) -> std::fs::File {
+    pub fn decode(&mut self) {
+        let decoder = BufferedDecoder::new(&mut self.input, &mut self.output);
+        decoder.run();
+    }
+
+    fn copy_to_tempfile(input: &mut R) -> std::fs::File {
         let id = Uuid::new_v4();
         let path = format!("/tmp/{id}");
 
@@ -35,19 +39,34 @@ impl Operation {
     }
 }
 
-impl BufferedEncoder {
-    pub fn run<R: Read, W: Write>(input: &mut R, output: &mut W, key: &Key) {
-        Self::write_key_segment(output, key);
-        Self::write_data_segment(input, output, key);
+pub struct BufferedEncoder<R: Read, W: Write> {
+    key: Key,
+    input: R,
+    output: W
+}
+
+impl<R: Read + Seek, W: Write> BufferedEncoder<R, W> {
+    pub fn new(mut input: R, output: W) -> BufferedEncoder<R, W> {
+        let key = Key::build(&mut input);
+
+        input.rewind()
+            .expect("Failed to rewind input");
+
+        BufferedEncoder { key, input, output }
     }
 
-    fn write_data_segment<R: Read, W: Write>(input: R, output: &mut W, key: &Key) {
-        let mut bit_buffer = BitBuffer::new(output);
+    pub fn run(&mut self) {
+        self.write_key_segment();
+        self.write_data_segment();
+    }
 
-        let input_reader = BufReader::new(input);
+    fn write_data_segment(&mut self) {
+        let mut bit_buffer = BitBuffer::new(&mut self.output);
+
+        let input_reader = BufReader::new(&mut self.input);
 
         for byte in input_reader.bytes() {
-            let encoded_bits = key.encode(byte.unwrap());
+            let encoded_bits = self.key.encode(byte.unwrap());
 
             for bit in encoded_bits.unwrap() {
                 bit_buffer.push(bit);
@@ -57,45 +76,56 @@ impl BufferedEncoder {
         bit_buffer.dump();
     }
 
-    fn write_key_segment<W: Write>(output: &mut W, key: &Key) {
-        let key_bytes = key.serialize();
+    fn write_key_segment(&mut self) {
+        let key_bytes = self.key.serialize();
 
         let key_length = key_bytes.len() as u16;
 
-        Byte::write_u16(output, key_length);
+        Byte::write_u16(&mut self.output, key_length);
 
-        output.write(&key_bytes[..])
+        self.output.write(&key_bytes[..])
             .expect("Failed to write key segment.");
     }
 }
 
-impl BufferedDecoder {
-    pub fn run<W: Write>(input: &mut std::fs::File, output: &mut W) {
-        let key = Self::load_key(input, output);
+pub struct BufferedDecoder<R: Read, W: Write> {
+    key: Key,
+    input: R,
+    output: W
+}
+
+impl<R: Read, W: Write> BufferedDecoder<R, W> {
+    pub fn new(mut input: R, output: W) -> BufferedDecoder<R, W> {
+        let key = Key::deserialize(&mut input);
+        BufferedDecoder { key, input, output }
     }
 
-    fn load_key<W: Write>(input: &mut std::fs::File, output: &mut W) -> Key {
-        Key::deserialize(input)
+    pub fn run(&self) {
+        self.read_data_segment();
+    }
+
+    fn read_data_segment(&self) {
+
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::VecDeque;
+    use std::io::Cursor;
 
     #[test]
     fn test_write_key_segment() {
-        let mut input = VecDeque::new();
-        let mut output = VecDeque::new();
+        let mut input = Vec::new();
+        let mut output = Vec::new();
 
-        input.append(&mut VecDeque::from([b'd'; 100]));
-        input.append(&mut VecDeque::from([b'k'; 50]));
-        input.append(&mut VecDeque::from([b'm'; 10]));
+        input.append(&mut Vec::from([b'd'; 100]));
+        input.append(&mut Vec::from([b'k'; 50]));
+        input.append(&mut Vec::from([b'm'; 10]));
 
-        let key = Key::build(&mut input);
-
-        BufferedEncoder::write_key_segment(&mut output, &key);
+        let mut cursor = Cursor::new(input);
+        let mut encoder = BufferedEncoder::new(&mut cursor, &mut output);
+        encoder.write_key_segment();
 
         // There should be 3 leaf nodes, and 2 stem nodes.
         //

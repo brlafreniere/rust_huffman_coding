@@ -1,11 +1,5 @@
 use std::io::{Write, Read};
 
-pub struct BitBuffer<'a, W: Write> {
-    max: u32,
-    buffer: Vec<bool>,
-    output: &'a mut W
-}
-
 pub struct Byte {}
 
 impl Byte {
@@ -38,15 +32,20 @@ impl Byte {
     }
 }
 
-impl<'a, W: Write> BitBuffer<'a, W> {
-    const DEFAULT_MAX: u32 = 1024;
+pub struct BitBuffer<W: Write> {
+    buffer: Vec<bool>,
+    output: W
+}
 
-    pub fn new(output: &'a mut W) -> Self {
-        Self { max: Self::DEFAULT_MAX, buffer: Vec::new(), output: output }
+impl<W: Write> BitBuffer<W> {
+    const MAX: u32 = 1024;
+
+    pub fn new(output: W) -> Self {
+        Self { buffer: Vec::new(), output: output }
     }
 
     pub fn push(&mut self, bit: bool) {
-        if self.buffer.len() as u32 == self.max {
+        if self.buffer.len() as u32 == Self::MAX {
             self.dump();
         }
 
