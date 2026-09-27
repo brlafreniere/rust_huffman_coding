@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use super::util::{Byte, BitBuffer};
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug)]
-struct Node {
+pub struct Node {
     byte: Option<u8>,
     left: Option<u16>,
     right: Option<u16>
@@ -86,16 +86,42 @@ pub struct Key {
     root: u16
 }
 impl Key {
-    pub fn build(input: impl Read) -> Key {
+    pub fn build_from(input: impl Read) -> Key {
         KeyBuilder::new(input)
     }
 
-    pub fn encode(&self, byte: u8) -> Option<Vec<bool>> {
-        KeyQuery::new(self).find_encoded_bits(byte)
+    pub fn deserialize_from(mut input: impl Read) -> Key {
+        KeyDeserializer::run(&mut input)
     }
 
-    pub fn decode(&self, bytes: Vec<u8>) -> Option<Vec<u8>> {
-        KeyQuery::new(self).find_decoded_bytes(bytes)
+    pub fn encode_byte(&self, byte: u8) -> Option<Vec<bool>> {
+        ByteToBitsSearch::new(self).find_bit_seq_for(byte)
+    }
+
+    pub fn decode(&self, bits: Vec<bool>) -> Option<u8> {
+        let mut current_node = self.root_node();
+
+        for bit in bits {
+            if bit == false {
+                if current_node.left.is_some() {
+                    current_node = &self.nodes[current_node.left.unwrap() as usize];
+                } else {
+                    return None;
+                }
+            } else if bit == true {
+                if current_node.right.is_some() {
+                    current_node = &self.nodes[current_node.right.unwrap() as usize];
+                } else {
+                    return None;
+                }
+            }
+        }
+
+        if current_node.byte.is_some() {
+            return Some(current_node.byte.unwrap());
+        } else {
+            return None;
+        }
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -109,11 +135,7 @@ impl Key {
         return output;
     }
 
-    pub fn deserialize(mut input: impl Read) -> Key {
-        KeyDeserializer::run(&mut input)
-    }
-
-    fn root_node(&self) -> &Node {
+    pub fn root_node(&self) -> &Node {
         & self.nodes[usize::from(self.root)]
     }
 }
@@ -150,16 +172,56 @@ impl KeyDeserializer {
     }
 }
 
+struct BitsToByteSearch<'a> {
+    key: &'a Key,
+    current_node_index: u16,
+}
+
+impl<'a> BitsToByteSearch<'a> {
+    pub fn new(key: &'a Key) -> BitsToByteSearch<'a> {
+        Self { key, current_node_index: key.root }
+    }
+
+    // When we add a bit, we visit the left or right node of the current node.
+    //
+    fn add_bit(&mut self, bit: bool) -> Result<Option<u8>, String> {
+        let current_node = &self.key.nodes[self.current_node_index as usize];
+
+        let next_node_index = match bit {
+            false => current_node.left,
+            true => current_node.right
+        };
+
+        let next_node = match next_node_index {
+            Some(i) => &self.key.nodes[next_node_index.unwrap() as usize],
+            // This means we have fallen off the tree... which, if we're toward the end of the data
+            // segment, and we are on our last input byte, then this is expected and fine.
+            // If we haven't reached the last byte... then there is a serious problem, possibly data
+            // corruption.
+            None => return Err(String::from("You have fallen off the tree bro"))
+        };
+
+        self.current_node_index = next_node_index.unwrap();
+
+        if next_node.byte.is_some() {
+            // This result says: we have found the byte, here it is!
+            return Ok(Some(next_node.byte.unwrap()));
+        } else {
+            // This result says: we didn't find the byte you're looking for, but we haven't fallen
+            // off the tree yet.
+            return Ok(None);
+        }
+    }
+}
+
 type QueueEntry = (u16, Vec<bool>);
-pub struct KeyQuery<'a> {
+pub struct ByteToBitsSearch<'a> {
     key: &'a Key,
     queue: VecDeque<QueueEntry>
 }
 
-impl<'a> KeyQuery<'a> {
-    const MAX_BIT_LENGTH: u16 = 256 + 256 - 1;
-
-    pub fn new(key: &'a Key) -> KeyQuery<'a> {
+impl<'a> ByteToBitsSearch<'a> {
+    pub fn new(key: &'a Key) -> ByteToBitsSearch<'a> {
         let mut query = Self { key, queue: VecDeque::new() };
 
         query.init_queue();
@@ -167,7 +229,7 @@ impl<'a> KeyQuery<'a> {
         return query;
     }
 
-    fn find_encoded_bits(&mut self, byte: u8) -> Option<Vec<bool>> {
+    fn find_bit_seq_for(&mut self, byte: u8) -> Option<Vec<bool>> {
         while self.queue.len() > 0 {
             let (index, bit_seq) = self.queue.pop_front().unwrap();
             let node = & self.key.nodes[usize::from(index)];
@@ -190,37 +252,6 @@ impl<'a> KeyQuery<'a> {
 
                 let entry = (node.right.unwrap(), next_bit_seq);
                 self.queue.push_back(entry);
-            }
-        }
-
-        return None;
-    }
-
-    pub fn find_decoded_bytes(&self, input_bytes: Vec<u8>) -> Option<Vec<u8>> {
-        let mut input_bits: Vec<bool> = Vec::new();
-        let output_bytes: Vec<u8> = Vec::new();
-        let root_node: &Node = self.key.root_node();
-
-        // What we need to do here is... we need to take all of the input bytes, and convert them to
-        // bits
-        //
-        // Then we can:
-        //
-        // 1. Pull a bit from the input bits.
-        // 2. Walk the tree:
-        //      1 bit? => Visit right.
-        //      0 bit? => Visit left.
-        // 3. Have we landed on a leaf node?
-        //      yes => decoded byte found!
-        //      no =>
-        //          have we gone beyond the bounds of the tree?
-        //              no => need more bits!
-        //              yes => the encoded value does not exist in our tree! something went horribly
-        //                     wrong, and the encoded input is probably corrupt.
-        
-        for byte in input_bytes {
-            for bit in Byte::get_bits(byte) {
-                input_bits.push(bit);
             }
         }
 
@@ -360,28 +391,28 @@ impl KeyBuilder {
 #[cfg(test)]
 mod tests { use super::*;
     mod key { use super::*;
-        mod encode { use super::*;
+        mod encode_byte { use super::*;
             #[test]
-            fn test_encode_sample_input_1() {
+            fn test_encode_byte_sample_input_1() {
                 let input_str = "aaabbc";
                 let mut input = VecDeque::new();
 
                 for chr in input_str.bytes() { input.push_back(chr) }
 
-                let key = Key::build(&mut input);
+                let key = Key::build_from(&mut input);
 
                 // Since 'a' is the most common character, we should expect 'a' to encode to just
                 // a '1' bit.
 
-                let bits = key.encode(b'a').unwrap();
+                let bits = key.encode_byte(b'a').unwrap();
 
                 assert_eq!(bits, Vec::from([true]));
 
-                let bits = key.encode(b'b').unwrap();
+                let bits = key.encode_byte(b'b').unwrap();
 
                 assert_eq!(bits, Vec::from([false, true]));
 
-                let bits = key.encode(b'c').unwrap();
+                let bits = key.encode_byte(b'c').unwrap();
 
                 assert_eq!(bits, Vec::from([false, false]));
             }
@@ -546,6 +577,43 @@ mod tests { use super::*;
             assert_eq!(node_p.right, Some(1));
 
             assert_eq!(key.root, 2);
+        }
+    }
+
+    mod bits_to_byte_search { use super::*;
+        #[test]
+        fn test_add_bit() {
+            let mut input = VecDeque::new();
+
+            let mut a = VecDeque::from([b'a'; 3]);
+            let mut b = VecDeque::from([b'b'; 2]);
+            let mut c = VecDeque::from([b'c'; 1]);
+
+            input.append(&mut a);
+            input.append(&mut b);
+            input.append(&mut c);
+
+            let key = Key::build_from(input);
+
+            let mut search = BitsToByteSearch::new(&key);
+            let result = search.add_bit(true);
+            assert_eq!(result, Ok(Some(b'a')));
+
+            let mut search = BitsToByteSearch::new(&key);
+
+            let result = search.add_bit(false);
+            assert_eq!(result, Ok(None));
+
+            let result = search.add_bit(false);
+            assert_eq!(result, Ok(Some(b'c')));
+
+            let mut search = BitsToByteSearch::new(&key);
+
+            let result = search.add_bit(false);
+            assert_eq!(result, Ok(None));
+
+            let result = search.add_bit(true);
+            assert_eq!(result, Ok(Some(b'b')));
         }
     }
 }

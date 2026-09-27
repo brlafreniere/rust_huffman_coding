@@ -1,4 +1,4 @@
-use super::code::{Key};
+use super::code::{Key, Node};
 use super::util::{BitBuffer, Byte};
 
 use std::io::{Read, Write, Seek, copy, BufReader};
@@ -13,7 +13,7 @@ pub struct Operation<R: Read, W: Write> {
 
 impl<W: Write, R: Read> Operation<R, W> {
     pub fn new(mut input: R, output: W) -> Operation<R, W> {
-        let tempfile = Self::copy_to_tempfile(&mut input);
+        let tempfile = Self::save_input_to_tempfile(&mut input);
         Operation { input, output, tempfile }
     }
 
@@ -23,11 +23,11 @@ impl<W: Write, R: Read> Operation<R, W> {
     }
 
     pub fn decode(&mut self) {
-        let mut decoder = BufferedDecoder::new(&mut self.input, &mut self.output);
+        let mut decoder = BufferedDecoder::new(&mut self.tempfile, &mut self.output);
         decoder.run();
     }
 
-    fn copy_to_tempfile(input: &mut R) -> std::fs::File {
+    fn save_input_to_tempfile(input: &mut R) -> std::fs::File {
         let id = Uuid::new_v4();
         let path = format!("/tmp/{id}");
 
@@ -47,7 +47,7 @@ pub struct BufferedEncoder<R: Read, W: Write> {
 
 impl<R: Read + Seek, W: Write> BufferedEncoder<R, W> {
     pub fn new(mut input: R, output: W) -> BufferedEncoder<R, W> {
-        let key = Key::build(&mut input);
+        let key = Key::build_from(&mut input);
 
         input.rewind()
             .expect("Failed to rewind input");
@@ -66,7 +66,7 @@ impl<R: Read + Seek, W: Write> BufferedEncoder<R, W> {
         let input_reader = BufReader::new(&mut self.input);
 
         for byte in input_reader.bytes() {
-            let encoded_bits = self.key.encode(byte.unwrap());
+            let encoded_bits = self.key.encode_byte(byte.unwrap());
 
             for bit in encoded_bits.unwrap() {
                 bit_buffer.push(bit);
@@ -91,13 +91,14 @@ impl<R: Read + Seek, W: Write> BufferedEncoder<R, W> {
 pub struct BufferedDecoder<R: Read, W: Write> {
     key: Key,
     input: R,
-    output: W
+    output: W,
+    input_bits: Vec<bool>
 }
 
 impl<R: Read, W: Write> BufferedDecoder<R, W> {
     pub fn new(mut input: R, output: W) -> BufferedDecoder<R, W> {
-        let key = Key::deserialize(&mut input);
-        BufferedDecoder { key, input, output }
+        let key = Key::deserialize_from(&mut input);
+        BufferedDecoder { key, input, output, input_bits: Vec::new() }
     }
 
     pub fn run(&mut self) {
@@ -107,9 +108,30 @@ impl<R: Read, W: Write> BufferedDecoder<R, W> {
     fn read_data_segment(&mut self) {
         let mut buffer: [u8; 1024] = [0; 1024];
         
-        let bytes_read = self.input.read(&mut buffer);
+        let bytes_read = self.input.read(&mut buffer)
+            .expect("Error while reading data segment");
 
-        self.key.decode(Vec::from(buffer));
+        while bytes_read > 0 {
+            let bytes = self.find_decoded_bytes(Vec::from(buffer));
+            if bytes.is_some() {
+                self.output.write(&bytes.unwrap())
+                    .expect("Error while writing decoded data to output");
+            }
+        }
+    }
+
+    pub fn find_decoded_bytes(&self, input_bytes: Vec<u8>) -> Option<Vec<u8>> {
+        let mut input_bits: Vec<bool> = Vec::new();
+        let output_bytes: Vec<u8> = Vec::new();
+        let root_node: &Node = self.key.root_node();
+
+        for byte in input_bytes {
+            for bit in Byte::get_bits(byte) {
+                input_bits.push(bit);
+            }
+        }
+
+        return None;
     }
 }
 
