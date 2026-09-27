@@ -23,7 +23,7 @@ impl<W: Write, R: Read> Operation<R, W> {
     }
 
     pub fn decode(&mut self) {
-        let decoder = BufferedDecoder::new(&mut self.input, &mut self.output);
+        let mut decoder = BufferedDecoder::new(&mut self.input, &mut self.output);
         decoder.run();
     }
 
@@ -100,12 +100,16 @@ impl<R: Read, W: Write> BufferedDecoder<R, W> {
         BufferedDecoder { key, input, output }
     }
 
-    pub fn run(&self) {
+    pub fn run(&mut self) {
         self.read_data_segment();
     }
 
-    fn read_data_segment(&self) {
+    fn read_data_segment(&mut self) {
+        let mut buffer: [u8; 1024] = [0; 1024];
+        
+        let bytes_read = self.input.read(&mut buffer);
 
+        self.key.decode(Vec::from(buffer));
     }
 }
 

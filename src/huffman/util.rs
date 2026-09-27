@@ -1,7 +1,10 @@
 use std::io::{Write, Read};
 
-pub struct Byte {}
+pub struct Byte {
+    bits: Vec<bool>
+}
 
+// Various helper methods related to byte handling.
 impl Byte {
     pub fn get_u16(input: &mut impl Read) -> u16 {
         let mut bytes: [u8; 2] = [0; 2];
@@ -29,6 +32,26 @@ impl Byte {
 
         output.write(&byte_pair)
             .expect("Failed to write byte pair.");
+    }
+
+    pub fn get_bits(byte: u8) -> Vec<bool> {
+        let mut places = 7;
+        let mut output_bits = Vec::new();
+
+        while places >= 0 {
+            let bit_mask = 1 << places;
+            let bit = byte & bit_mask;
+
+            if bit > 0 {
+                output_bits.push(true);
+            } else {
+                output_bits.push(false);
+            }
+
+            places = places - 1;
+        }
+
+        return output_bits;
     }
 }
 
@@ -116,6 +139,16 @@ mod tests {
             let result = Byte::get_u16(&mut input);
 
             assert_eq!(result, value);
+        }
+
+        #[test]
+        fn test_get_bits() {
+            let input_byte = b'a';
+
+            let output_bits = Byte::get_bits(input_byte);
+
+            // a = 01100001
+            assert_eq!(output_bits, vec!(false, true, true, false, false, false, false, true));
         }
     }
 

@@ -2,7 +2,7 @@ use std::collections::{HashMap, BinaryHeap, VecDeque};
 use std::cmp::Reverse;
 use std::io::{Read, Write};
 
-use super::util::Byte;
+use super::util::{Byte, BitBuffer};
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug)]
 struct Node {
@@ -91,7 +91,11 @@ impl Key {
     }
 
     pub fn encode(&self, byte: u8) -> Option<Vec<bool>> {
-        KeyQuery::find_bits_for(byte, self)
+        KeyQuery::new(self).find_encoded_bits(byte)
+    }
+
+    pub fn decode(&self, bytes: Vec<u8>) -> Option<Vec<u8>> {
+        KeyQuery::new(self).find_decoded_bytes(bytes)
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -146,43 +150,103 @@ impl KeyDeserializer {
     }
 }
 
-pub struct KeyQuery;
 type QueueEntry = (u16, Vec<bool>);
-type Queue = VecDeque<QueueEntry>;
+pub struct KeyQuery<'a> {
+    key: &'a Key,
+    queue: VecDeque<QueueEntry>
+}
 
-impl KeyQuery {
-    fn queue_by_index(queue: &mut Queue, index: Option<u16>, bit_seq: Vec<bool>) {
-        if index.is_some() {
-            queue.push_back((index.unwrap(), bit_seq));
-        }
+impl<'a> KeyQuery<'a> {
+    const MAX_BIT_LENGTH: u16 = 256 + 256 - 1;
+
+    pub fn new(key: &'a Key) -> KeyQuery<'a> {
+        let mut query = Self { key, queue: VecDeque::new() };
+
+        query.init_queue();
+
+        return query;
     }
 
-    fn find_bits_for(byte: u8, key: &Key) -> Option<Vec<bool>> {
-        let mut queue = VecDeque::new();
-
-        let root_node: &Node = key.root_node();
-
-        Self::queue_by_index(&mut queue, root_node.left, Vec::from([false]));
-        Self::queue_by_index(&mut queue, root_node.right, Vec::from([true]));
-
-        while queue.len() != 0 {
-            let (index, bit_seq) = queue.pop_front().unwrap();
-            let node = & key.nodes[usize::from(index)];
+    fn find_encoded_bits(&mut self, byte: u8) -> Option<Vec<bool>> {
+        while self.queue.len() > 0 {
+            let (index, bit_seq) = self.queue.pop_front().unwrap();
+            let node = & self.key.nodes[usize::from(index)];
 
             if node.byte.is_some() && node.byte.unwrap() == byte {
                 return Some(bit_seq)
             }
 
-            let mut left_bit_seq = bit_seq.clone();
-            left_bit_seq.push(false);
-            Self::queue_by_index(&mut queue, node.left, left_bit_seq);
+            if node.left.is_some() {
+                let mut next_bit_seq = bit_seq.clone();
+                next_bit_seq.push(false);
 
-            let mut right_bit_seq = bit_seq.clone();
-            right_bit_seq.push(true);
-            Self::queue_by_index(&mut queue, node.right, right_bit_seq);
+                let entry = (node.left.unwrap(), next_bit_seq);
+                self.queue.push_back(entry);
+            }
+
+            if node.right.is_some() {
+                let mut next_bit_seq = bit_seq.clone();
+                next_bit_seq.push(true);
+
+                let entry = (node.right.unwrap(), next_bit_seq);
+                self.queue.push_back(entry);
+            }
         }
 
         return None;
+    }
+
+    pub fn find_decoded_bytes(&self, input_bytes: Vec<u8>) -> Option<Vec<u8>> {
+        let mut input_bits: Vec<bool> = Vec::new();
+        let output_bytes: Vec<u8> = Vec::new();
+        let root_node: &Node = self.key.root_node();
+
+        // What we need to do here is... we need to take all of the input bytes, and convert them to
+        // bits
+        //
+        // Then we can:
+        //
+        // 1. Pull a bit from the input bits.
+        // 2. Walk the tree:
+        //      1 bit? => Visit right.
+        //      0 bit? => Visit left.
+        // 3. Have we landed on a leaf node?
+        //      yes => decoded byte found!
+        //      no =>
+        //          have we gone beyond the bounds of the tree?
+        //              no => need more bits!
+        //              yes => the encoded value does not exist in our tree! something went horribly
+        //                     wrong, and the encoded input is probably corrupt.
+        
+        for byte in input_bytes {
+            for bit in Byte::get_bits(byte) {
+                input_bits.push(bit);
+            }
+        }
+
+        return None;
+    }
+
+    fn init_queue(&mut self) {
+        let root_node: &Node = self.key.root_node();
+
+        if root_node.left.is_some() {
+            let left_entry = (
+                root_node.left.unwrap(),
+                Vec::from([false])
+            );
+
+            self.queue.push_back(left_entry);
+        }
+
+        if root_node.right.is_some() {
+            let right_entry = (
+                root_node.right.unwrap(),
+                Vec::from([true])
+            );
+
+            self.queue.push_back(right_entry);
+        }
     }
 }
 
