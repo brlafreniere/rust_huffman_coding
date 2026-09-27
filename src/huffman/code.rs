@@ -182,8 +182,13 @@ impl<'a> BitsToByteSearch<'a> {
         Self { key, current_node_index: key.root }
     }
 
-    // When we add a bit, we visit the left or right node of the current node.
+    // Add 1 bit at a time.
+    // If a byte is found => Ok(Some(u8))
+    // If no byte found => Ok(None) // this signals to keep adding bits
     //
+    // If you have walked off the tree => Err("bro")
+    //   If this is the very last byte of input, then this is fine and expected
+    //   Otherwise, you have some data corruption
     fn add_bit(&mut self, bit: bool) -> Result<Option<u8>, String> {
         let current_node = &self.key.nodes[self.current_node_index as usize];
 
