@@ -95,7 +95,7 @@ impl Key {
     }
 
     pub fn encode_byte(&self, byte: u8) -> Option<Vec<bool>> {
-        ByteToBitsSearch::new(self).find_bit_seq_for(byte)
+        BitSearch::new(self).find_bits_for(byte)
     }
 
     pub fn decode(&self, bits: Vec<bool>) -> Option<u8> {
@@ -172,13 +172,13 @@ impl KeyDeserializer {
     }
 }
 
-struct BitsToByteSearch<'a> {
+pub struct ByteSearch<'a> {
     key: &'a Key,
     current_node_index: u16,
 }
 
-impl<'a> BitsToByteSearch<'a> {
-    pub fn new(key: &'a Key) -> BitsToByteSearch<'a> {
+impl<'a> ByteSearch<'a> {
+    pub fn new(key: &'a Key) -> ByteSearch<'a> {
         Self { key, current_node_index: key.root }
     }
 
@@ -189,7 +189,7 @@ impl<'a> BitsToByteSearch<'a> {
     // If you have walked off the tree => Err("bro")
     //   If this is the very last byte of input, then this is fine and expected
     //   Otherwise, you have some data corruption
-    fn add_bit(&mut self, bit: bool) -> Result<Option<u8>, String> {
+    pub fn find_byte_at_next_bit(&mut self, bit: bool) -> Result<Option<u8>, String> {
         let current_node = &self.key.nodes[self.current_node_index as usize];
 
         let next_node_index = match bit {
@@ -220,13 +220,13 @@ impl<'a> BitsToByteSearch<'a> {
 }
 
 type QueueEntry = (u16, Vec<bool>);
-pub struct ByteToBitsSearch<'a> {
+pub struct BitSearch<'a> {
     key: &'a Key,
     queue: VecDeque<QueueEntry>
 }
 
-impl<'a> ByteToBitsSearch<'a> {
-    pub fn new(key: &'a Key) -> ByteToBitsSearch<'a> {
+impl<'a> BitSearch<'a> {
+    pub fn new(key: &'a Key) -> BitSearch<'a> {
         let mut query = Self { key, queue: VecDeque::new() };
 
         query.init_queue();
@@ -234,7 +234,7 @@ impl<'a> ByteToBitsSearch<'a> {
         return query;
     }
 
-    fn find_bit_seq_for(&mut self, byte: u8) -> Option<Vec<bool>> {
+    fn find_bits_for(&mut self, byte: u8) -> Option<Vec<bool>> {
         while self.queue.len() > 0 {
             let (index, bit_seq) = self.queue.pop_front().unwrap();
             let node = & self.key.nodes[usize::from(index)];
@@ -587,7 +587,7 @@ mod tests { use super::*;
 
     mod bits_to_byte_search { use super::*;
         #[test]
-        fn test_add_bit() {
+        fn test_find_byte_at_next_bit() {
             let mut input = VecDeque::new();
 
             let mut a = VecDeque::from([b'a'; 3]);
@@ -600,24 +600,24 @@ mod tests { use super::*;
 
             let key = Key::build_from(input);
 
-            let mut search = BitsToByteSearch::new(&key);
-            let result = search.add_bit(true);
+            let mut search = ByteSearch::new(&key);
+            let result = search.find_byte_at_next_bit(true);
             assert_eq!(result, Ok(Some(b'a')));
 
-            let mut search = BitsToByteSearch::new(&key);
+            let mut search = ByteSearch::new(&key);
 
-            let result = search.add_bit(false);
+            let result = search.find_byte_at_next_bit(false);
             assert_eq!(result, Ok(None));
 
-            let result = search.add_bit(false);
+            let result = search.find_byte_at_next_bit(false);
             assert_eq!(result, Ok(Some(b'c')));
 
-            let mut search = BitsToByteSearch::new(&key);
+            let mut search = ByteSearch::new(&key);
 
-            let result = search.add_bit(false);
+            let result = search.find_byte_at_next_bit(false);
             assert_eq!(result, Ok(None));
 
-            let result = search.add_bit(true);
+            let result = search.find_byte_at_next_bit(true);
             assert_eq!(result, Ok(Some(b'b')));
         }
     }

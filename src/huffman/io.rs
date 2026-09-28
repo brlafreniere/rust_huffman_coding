@@ -1,9 +1,11 @@
-use super::code::{Key, Node};
+use super::code::{Key, ByteSearch};
 use super::util::{BitBuffer, Byte};
 
 use std::io::{Read, Write, Seek, copy, BufReader};
 use std::fs::File;
 use uuid::Uuid;
+
+const BUFFER_SIZE: usize = 1024;
 
 pub struct Operation<R: Read, W: Write> {
     input: R,
@@ -92,42 +94,68 @@ pub struct BufferedDecoder<R: Read, W: Write> {
     key: Key,
     input: R,
     output: W,
-    input_bits: Vec<bool>
 }
 
 impl<R: Read, W: Write> BufferedDecoder<R, W> {
     pub fn new(mut input: R, output: W) -> BufferedDecoder<R, W> {
         let key = Key::deserialize_from(&mut input);
-        BufferedDecoder { key, input, output, input_bits: Vec::new() }
+
+        BufferedDecoder { key, input, output }
     }
 
     pub fn run(&mut self) {
-        self.read_data_segment();
+        let chunk = self.get_chunk();
+
+        while chunk != None {
+            let bits = self.bytes_to_bits(chunk.unwrap());
+            let leftover = self.process_bits(bits);
+        }
     }
 
-    fn read_data_segment(&mut self) {
-        let mut buffer: [u8; 1024] = [0; 1024];
+    fn process_bits(&self, bits: [bool; BUFFER_SIZE]) -> Vec<bool> {
+        let search = ByteSearch::new(&self.key);
+        let byte_written = false;
+
+        for bit in bits {
+            let byte_written = self.add_bit_to_search(bit, search);
+        }
+    }
+
+    fn add_bit_to_search(&self, bit: bool, search: ByteSearch) -> bool {
+        let result = search.find_byte_at_next_bit(bit);
+
+        match result {
+            Ok(Some(byte)) => {
+                self.output.write(&[byte]);
+                search = ByteSearch::new(&self.key);
+
+                true
+            },
+            Ok(None) => { false },
+            Err(msg) => { }
+        }
+    }
+
+    fn get_chunk(&mut self) -> Option<[u8; BUFFER_SIZE]> {
+        let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
         
         let bytes_read = self.input.read(&mut buffer)
             .expect("Error while reading data segment");
 
-        while bytes_read > 0 {
-            let bytes = self.find_decoded_bytes(Vec::from(buffer));
-            if bytes.is_some() {
-                self.output.write(&bytes.unwrap())
-                    .expect("Error while writing decoded data to output");
-            }
+        match bytes_read {
+            0 => None,
+            x => Some(buffer)
         }
     }
 
-    pub fn find_decoded_bytes(&self, input_bytes: Vec<u8>) -> Option<Vec<u8>> {
-        let mut input_bits: Vec<bool> = Vec::new();
-        let output_bytes: Vec<u8> = Vec::new();
-        let root_node: &Node = self.key.root_node();
+    fn bytes_to_bits(&self, chunk: [u8; BUFFER_SIZE]) -> [bool; BUFFER_SIZE] {
+        let mut bits: [bool; BUFFER_SIZE] = [false; BUFFER_SIZE];
+        let mut index = 0;
 
-        for byte in input_bytes {
+        for byte in chunk {
             for bit in Byte::get_bits(byte) {
-                input_bits.push(bit);
+                bits[index] = bit;
+                index += 1;
             }
         }
 
